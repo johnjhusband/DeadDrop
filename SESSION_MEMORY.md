@@ -469,6 +469,120 @@ async function createFolderHierarchyClientSide(rootFolderId, folderPaths) {
 
 ---
 
-**Current Status:** v3.4 implemented and documented. Ready for testing with updated code.
+## v3.5.x: CORS Fixes & OAuth2 Library (2025-01-16)
+
+### What Happened
+
+**Problem: CORS errors on file uploads**
+- v3.5.1: Added `createFolder()` server-side function for folder hierarchy (drive.file scope issue)
+- v3.5.2: Added `createUploadSession()` server-side for resumable uploads (404 error when client called Drive API directly)
+- v3.5.3: Fixed CORS error by using OAuth2 library token consistently for session and chunk uploads
+
+**Root Cause Analysis:**
+- When Apps Script is linked to a GCP project, drive.file scope only grants access to files created by the SAME OAuth client_id
+- Session created with one token, chunks uploaded with different auth context = CORS block
+- Fix: Use same OAuth2 library token for both session creation and chunk uploads
+
+**v3.5.3 Changes:**
+- `createUploadSession()` uses OAuth2 library token instead of ScriptApp.getOAuthToken()
+- Returns `accessToken` to client for use in chunk upload Authorization headers
+- Removed GCP project linking step from INSTALL.md (was causing drive.file scope issues)
+
+**v3.5.4 Changes:**
+- Added `clearAllAuth()` utility function to fix state token errors
+
+**v3.5.5 Changes:**
+- Added Step 8: Admin Authorization - admin must sign in first via web app to initialize OAuth
+- Steps renumbered (now 9 steps)
+
+### Critical Discovery: Admin Pre-Authorization Required
+
+**The Problem:**
+- First user to sign in gets "state token is invalid or has expired" error
+- OAuth2 library stores state in UserProperties
+- For "Execute as: Me" web apps, all users share owner's UserProperties
+- First authorization must be done by admin/owner to initialize the OAuth context
+
+**The Solution:**
+- Admin opens web app first (not incognito)
+- Signs in with admin Google account
+- This initializes OAuth for all subsequent users
+- Documented in INSTALL.md Step 8
+
+### Failed Experiment: v4.0.0 (ScriptApp.getOAuthToken())
+
+**Hypothesis:**
+- Remove OAuth2 library dependency
+- Use `ScriptApp.getOAuthToken()` instead
+- No user sign-in required - anyone with link can upload
+- Simpler installation
+
+**Implementation (deaddrop3 folder):**
+- Removed all OAuth2 library code
+- Used `ScriptApp.getOAuthToken()` for Drive API access
+- No sign-in button in UI
+- Simpler INSTALL.md (5 steps instead of 9)
+
+**Result: FAILED**
+- CORS error: "No 'Access-Control-Allow-Origin' header is present on the requested resource"
+- `ScriptApp.getOAuthToken()` returns token meant for server-side use (UrlFetchApp)
+- Not valid for browser-side API calls from googleusercontent.com origin
+- OAuth2 library token works because it comes from proper OAuth flow with registered client_id
+
+**Conclusion:**
+- Browser-side Drive API calls require proper OAuth token from registered OAuth client
+- `ScriptApp.getOAuthToken()` only works for server-side UrlFetchApp calls
+- OAuth2 library approach (v3.5.5) is the working solution
+- Admin pre-authorization step is unavoidable
+
+### What I Learned
+
+**OAuth Token Types:**
+1. **OAuth2 Library Token** - From proper OAuth flow with client_id/secret, works for browser-side API calls
+2. **ScriptApp.getOAuthToken()** - Internal Apps Script token, only works for server-side UrlFetchApp
+
+**CORS with Drive API:**
+- Resumable upload session must be created with same token used for chunk uploads
+- Token must come from registered OAuth client for browser CORS to work
+- Session URL is tied to the authentication context that created it
+
+**drive.file Scope:**
+- Only grants access to files created by the SAME OAuth client_id
+- When Apps Script is linked to GCP project, DriveApp uses different client than OAuth2 library
+- Solution: Don't link Apps Script to GCP project (use default hidden project)
+
+**UserProperties in Web Apps:**
+- "Execute as: Me" = all users share owner's UserProperties
+- OAuth2 library stores tokens in UserProperties
+- First authorization initializes the property store for all users
+
+---
+
+## Current Code State (v3.5.5)
+
+### Code.gs
+- Uses OAuth2 library for authentication
+- `createUploadSession()` uses OAuth2 library token
+- Returns `accessToken` to client for chunk uploads
+- `createFolder()` uses DriveApp (owner's permissions)
+- `clearAllAuth()` utility for fixing state token errors
+
+### Uploads.html
+- OAuth sign-in flow with popup
+- Chunk uploads include Authorization header with session token
+- Folder hierarchy created via server-side `createFolder()`
+
+### INSTALL.md
+- 9 steps total
+- Step 2: Add OAuth2 library
+- Step 3: Create GCP project and enable Drive API (but don't link to Apps Script)
+- Step 4: Create OAuth credentials
+- Step 8: Admin Authorization (required)
+
+---
+
+**Current Status:** v3.5.5 working. Admin must sign in first to initialize OAuth.
+
+**deaddrop3 folder:** Contains failed v4.0.0 experiment (deleted per user request).
 
 **END OF SESSION MEMORY**

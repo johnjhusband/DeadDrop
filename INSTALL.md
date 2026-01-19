@@ -1,8 +1,19 @@
-# Installation Instructions - DeadDrop v3.4
+# Installation Instructions - DeadDrop v3.5.5
 
 **Server-Side OAuth + Drive API for Folder Upload (750GB per file, unlimited duration)**
 
-**Time Required:** 30-45 minutes
+**Time Required:** 35-50 minutes
+
+**v3.5.5 Changes (2025-01-16):**
+- Added Step 8: Admin Authorization - admin must sign in first via web app to initialize OAuth
+- Steps renumbered (now 9 steps)
+
+**v3.5.3 Changes (2025-01-16):**
+- Removed Step 4 (Link Apps Script to GCP Project) - this was causing permission errors
+- Apps Script now uses its default project for DriveApp (required for drive.file scope compatibility)
+
+**v3.5 Changes (2025-01-13):**
+- Step 3: Added new GCP project creation for users with existing OAuth configurations
 
 ---
 
@@ -37,28 +48,34 @@
 ## Step 3: Enable Drive API and Configure Auth (15 min)
 
 1. Open new tab → https://console.cloud.google.com
-2. ☰ menu → APIs & Services → Library
-3. Search: `Google Drive API`
-4. Click it → ENABLE
-5. ☰ menu → APIs & Services → OAuth consent screen
-6. Click **Get Started**
-7. App Information:
+2. Click the project dropdown at top (next to "Google Cloud")
+3. Click **New Project** (top right of popup)
+4. Project name: `DeadDrop Console`
+5. Click **Create**
+6. Wait for notification to complete
+7. Click **SELECT PROJECT**
+8. ☰ menu → APIs & Services → Library
+9. Search: `Google Drive API`
+10. Click it → ENABLE
+11. ☰ menu → APIs & Services → OAuth consent screen
+12. Click **Get Started**
+13. App Information:
    - App name: `DeadDrop Console`
    - User support email: (your email)
    - Click Next
-8. Audience:
+14. Audience:
    - Select user type: **External**
    - Click Next
-9. Contact Information:
+15. Contact Information:
    - Email address: (your email)
    - Click Next
-10. Finish:
+16. Finish:
    - Check "I agree to Google API Services User Data Policy"
    - Click Continue
    - Click Create
-11. Click **Audience** in left menu
-12. Click **PUBLISH APP**
-13. Click **Confirm**
+17. Click **Audience** in left menu
+18. Click **PUBLISH APP**
+19. Click **Confirm**
 
 ---
 
@@ -68,7 +85,7 @@
 1. Go to https://script.google.com
 2. Click your project name
 3. Click gear icon ⚙️ (left side)
-4. Find "Script ID" - copy it
+4. Find "Script ID" - copy it here: _______________
 
 **Now create the redirect URI:**
 5. Take this template: `https://script.google.com/macros/d/PASTE_YOUR_SCRIPT_ID_HERE/usercallback`
@@ -132,16 +149,23 @@
 6. Authorize → Choose account
 7. Check both permission boxes
 8. Click Allow
-9. Click Deploy → New deployment
-10. Click gear ⚙️ → Web app
-11. Execute as: Me
-12. Who has access: Anyone
-13. Deploy
-14. Copy Web App URL
+9. Copy Web App URL
 
 ---
 
-## Step 8: Test (5 min)
+## Step 8: Admin Authorization (1 min)
+
+**Required:** Admin must sign in first to initialize OAuth for all users.
+
+1. Open Web App URL in a browser (not incognito)
+2. Click **Sign in with Google**
+3. Sign in with your **admin Google account** (the account that owns the script)
+4. Click **Continue** → **Allow**
+5. Popup closes - you should see the upload interface
+
+---
+
+## Step 9: Test (5 min)
 
 1. Open Web App URL in incognito window
 2. Click **Sign in with Google**

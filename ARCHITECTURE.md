@@ -1,7 +1,7 @@
-# DeadDrop v3.4 - Technical Architecture Documentation
+# DeadDrop v3.5.3 - Technical Architecture Documentation
 
-**Last Updated:** 2025-12-01
-**Version:** v3.4 (Client-Side Folder Creation)
+**Last Updated:** 2025-01-16
+**Version:** v3.5.3 (Server-Side Upload Sessions)
 
 ---
 
@@ -20,25 +20,21 @@
 
 ## Overview
 
-DeadDrop v3.3 uses **server-side OAuth** via the apps-script-oauth2 library and Google Drive API v3 for folder uploads.
+DeadDrop v3.5.3 uses **server-side OAuth** via the apps-script-oauth2 library and Google Drive API v3 for file/folder uploads.
 
 **Architecture Pattern:**
-- **Client-side:** Minimal OAuth UI + Direct Drive API uploads + Folder management  
-- **Server-side:** OAuth2 library handles authentication, token storage, and refresh
-- **No file proxy:** Files upload directly from browser to Drive (bandwidth efficient)
+- **Client-side:** OAuth UI + Chunk uploads to Drive API
+- **Server-side:** OAuth2 library handles authentication, token storage, refresh, upload session creation, and folder creation
+- **No file proxy:** File chunks upload directly from browser to Drive (bandwidth efficient)
 
 **Key Capabilities:**
-- Folder selection (entire folder with subfolders)
+- Folder selection (entire folder with subfolders) - desktop only
+- Single/multiple file selection - desktop and mobile
 - Individual files up to 750GB each
 - Unlimited total upload size
 - Preserves original folder structure in Drive
-- Upload verification (size + MD5 checksum)
-- Progress tracking per file and overall batch
 - Server-side OAuth token management (automatic refresh)
-
-**Architecture Change from v3.2:**
-- v3.2: Client-side OAuth with Google Identity Services (GIS) - **BROKEN** due to googleusercontent.com forbidden domain
-- v3.3: Server-side OAuth with apps-script-oauth2 library - **WORKS** with Apps Script web apps
+- Mobile device support (iPhone, Android)
 
 ---
 
@@ -51,11 +47,17 @@ DeadDrop v3.3 uses **server-side OAuth** via the apps-script-oauth2 library and 
 - Opens OAuth popup pointing to Google
 - Backend handles callback and token storage
 
+**Mobile Detection**
+- Detects device type (mobile vs desktop)
+- Mobile: File selection only (no folder upload)
+- Desktop: File and folder selection
+
 **Google Drive API v3**
 - Endpoint: `https://www.googleapis.com/upload/drive/v3/files`
 - Method: Resumable upload protocol
 - Max file size: 5TB (limited to 750GB by daily quota)
-- Access token obtained from backend via `google.script.run.getAccessToken()`
+- Upload session created server-side via `google.script.run.createUploadSession()`
+- Access token returned from session creation for chunk uploads
 
 ### Backend
 
@@ -303,22 +305,22 @@ function extractFolderPaths(files) {
 ```javascript
 function createFolderHierarchy(rootFolderId, folderPaths) {
   const folderIdMap = { '': rootFolderId };
-  
+
   // Sort by depth (shallowest first)
-  const sortedPaths = folderPaths.sort((a, b) => 
+  const sortedPaths = folderPaths.sort((a, b) =>
     a.split('/').length - b.split('/').length
   );
-  
+
   sortedPaths.forEach(path => {
     const parts = path.split('/');
     const parentPath = parts.slice(0, -1).join('/');
     const folderName = parts[parts.length - 1];
-    
+
     const parentFolder = DriveApp.getFolderById(folderIdMap[parentPath]);
     const newFolder = parentFolder.createFolder(folderName);
     folderIdMap[path] = newFolder.getId();
   });
-  
+
   return folderIdMap;
 }
 ```
@@ -353,12 +355,14 @@ authCallback(request)  // Handles OAuth callback from Google
 isAuthorized()         // Checks if user has valid tokens
 getAccessToken()       // Returns access token (auto-refreshes if needed)
 logout()               // Revokes tokens
+clearAllAuth()         // Clears all stored OAuth data (troubleshooting)
 ```
 
 **Upload Management:**
 ```javascript
-prepareUpload(projectName, totalFiles, totalSize)  // Creates root folder
-createFolderHierarchy(rootFolderId, folderPaths)   // Creates nested folders
+prepareUpload(projectName, totalFiles, totalSize)          // Creates root folder
+createFolder(folderName, parentFolderId)                   // Creates single subfolder
+createUploadSession(fileName, mimeType, parentFolderId)    // Creates resumable upload session
 ```
 
 **Configuration:**

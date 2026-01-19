@@ -1,21 +1,21 @@
-# DeadDrop v3.4
+# DeadDrop v3.5.3
 
 **Google Apps Script folder upload application with server-side OAuth authentication**
 
-Upload entire folders with all subfolders and files directly to Google Drive. Supports individual files up to 750GB with unlimited upload duration.
+Upload entire folders with all subfolders and files directly to Google Drive. Supports individual files up to 750GB with unlimited upload duration. Works on desktop and mobile devices.
 
 ---
 
 ## Features
 
-- ✅ **Folder Upload** - Select entire folder with all subfolders
-- ✅ **Preserve Structure** - Original folder hierarchy maintained in Drive  
+- ✅ **Folder Upload** - Select entire folder with all subfolders (desktop)
+- ✅ **File Upload** - Select single or multiple files (desktop and mobile)
+- ✅ **Preserve Structure** - Original folder hierarchy maintained in Drive
 - ✅ **Large Files** - Individual files up to 750GB each
 - ✅ **Unlimited Duration** - Server-side OAuth with automatic token management
-- ✅ **Progress Tracking** - Real-time upload status per file
-- ✅ **Resumable Uploads** - 256MB chunks with automatic retry
-- ✅ **Verification** - File size and MD5 checksum validation
+- ✅ **Resumable Uploads** - 256MB chunks
 - ✅ **Multi-User** - Each user authorizes with their own Google account
+- ✅ **Mobile Support** - iPhone and Android file uploads
 
 ---
 
@@ -35,21 +35,19 @@ See [INSTALL.md](INSTALL.md) for complete installation instructions.
 
 ## Architecture
 
-**Version:** v3.3 (Server-Side OAuth)
+**Version:** v3.5.3 (Server-Side OAuth + Server-Side Upload Sessions)
 
 **Frontend:**
 - HTML/JavaScript (no frameworks)
-- Google Drive API v3 for direct uploads
+- Google Drive API v3 for chunk uploads
 - OAuth handled server-side (no client-side library)
+- Mobile device detection and adaptive UI
 
 **Backend:**
 - Google Apps Script
 - apps-script-oauth2 library for OAuth management
-- DriveApp for folder creation
-
-**Key Change from v3.2:**
-- v3.2 used client-side OAuth (Google Identity Services) - **BROKEN** due to googleusercontent.com forbidden domain
-- v3.3 uses server-side OAuth (apps-script-oauth2 library) - **WORKS** with Apps Script web apps
+- Server-side upload session creation
+- Server-side folder creation
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for detailed technical documentation.
 
@@ -84,9 +82,8 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for detailed technical documentation.
 - Total storage: Depends on your Google Drive plan
 
 **Browser Compatibility:**
-- Chrome/Edge: Full support (webkitdirectory)
-- Firefox: Full support
-- Safari: Full support (macOS 11.1+)
+- Desktop: Chrome, Edge, Firefox, Safari (folder + file upload)
+- Mobile: iOS Safari, Android Chrome (file upload only)
 
 ---
 
@@ -117,12 +114,18 @@ MIT License - See repository for details
 
 ## Version History
 
+### v3.5.3 (2025-01-16)
+- Fixed CORS error on chunk uploads
+- Upload session created server-side via `createUploadSession()`
+- Server returns access token for chunk uploads
+
+### v3.5 (2025-01-13)
+- Added mobile device support (iPhone, Android)
+- Single/multiple file selection alongside folder selection
+
 ### v3.4 (2025-12-01)
-- **PERFORMANCE:** Moved folder hierarchy creation from server-side to client-side
-- Folders now created via Drive API directly from browser (no time limits)
-- Removed server-side `createFolderHierarchy()` function (no longer needed)
-- Fixes timeout errors with large folder structures (7000+ folders)
-- No Apps Script execution time limits for folder creation
+- Moved folder hierarchy creation from server-side to client-side
+- Fixes timeout errors with large folder structures
 
 ### v3.3 (2025-11-25)
 - **MAJOR:** Switched from client-side OAuth to server-side OAuth

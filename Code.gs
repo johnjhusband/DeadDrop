@@ -1,7 +1,33 @@
 /**
- * DeadDrop v3.4 - Backend
- * Server-Side OAuth + Drive API Folder Upload
- * Supports folder upload (all subfolders), unlimited duration via OAuth2 library
+ * DeadDrop v3.5.5 - Backend
+ * Server-Side OAuth + Drive API File/Folder Upload
+ * Supports: Desktop (file + folder), Mobile (file only)
+ *
+ * v3.5.5 Update (2025-01-16):
+ * - Admin must sign in first via web app to initialize OAuth (documented in INSTALL.md)
+ *
+ * v3.5.4 Update (2025-01-16):
+ * - Added clearAllAuth() utility function to fix state token errors
+ *
+ * v3.5.3 Update (2025-01-16):
+ * - Fixed CORS error on chunk uploads by using consistent OAuth2 library token
+ * - createUploadSession() now uses OAuth2 library token instead of ScriptApp.getOAuthToken()
+ * - Returns accessToken to client for use in chunk upload Authorization headers
+ * - INSTALL.md updated: removed GCP project linking step (was causing drive.file scope issues)
+ *
+ * v3.5.2 Update (2025-01-16):
+ * - Added createUploadSession() server-side function for resumable uploads
+ * - Fixes 404 error when client tried to call Drive API directly
+ *
+ * v3.5.1 Update (2025-01-16):
+ * - Added createFolder() server-side function for folder hierarchy creation
+ * - Fixes permission error when creating subfolders (drive.file scope issue)
+ * - Folder creation now uses owner's DriveApp permissions instead of user's OAuth token
+ *
+ * v3.5 Update (2025-01-13):
+ * - Added mobile device support (iPhone, Android) for file uploads
+ * - Backend unchanged - mobile support handled entirely in frontend
+ * - prepareUpload() now handles both file and folder uploads
  *
  * v3.4 Update (2025-12-01):
  * - Moved folder hierarchy creation from server-side to client-side
@@ -217,6 +243,76 @@ function getNextSequential(rootFolder) {
 }
 
 /**
+ * Creates a single folder inside a parent folder
+ * Called by client-side code to create folder hierarchy
+ * Uses owner's DriveApp permissions (not user's OAuth token)
+ * @param {string} folderName - Name of folder to create
+ * @param {string} parentFolderId - ID of parent folder
+ * @returns {Object} {success, folderId, message}
+ */
+function createFolder(folderName, parentFolderId) {
+  try {
+    const parentFolder = DriveApp.getFolderById(parentFolderId);
+    const newFolder = parentFolder.createFolder(folderName);
+    return { success: true, folderId: newFolder.getId() };
+  } catch (error) {
+    Logger.log('ERROR in createFolder: ' + error.toString());
+    return { success: false, message: error.message };
+  }
+}
+
+/**
+ * Creates a resumable upload session for a file
+ * Called by client-side code before uploading file chunks
+ * Uses OAuth2 library token (same as client) for CORS compatibility
+ * @param {string} fileName - Name of the file
+ * @param {string} mimeType - MIME type of the file
+ * @param {string} parentFolderId - ID of parent folder
+ * @returns {Object} {success, sessionUrl, accessToken, message}
+ */
+function createUploadSession(fileName, mimeType, parentFolderId) {
+  try {
+    // Use OAuth2 library token (same token client will use for chunks)
+    const service = getOAuthService();
+    if (!service.hasAccess()) {
+      return { success: false, message: 'User not authorized' };
+    }
+    const accessToken = service.getAccessToken();
+
+    const metadata = {
+      name: fileName,
+      mimeType: mimeType,
+      parents: [parentFolderId]
+    };
+
+    const response = UrlFetchApp.fetch(
+      'https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable',
+      {
+        method: 'POST',
+        contentType: 'application/json',
+        headers: {
+          'Authorization': 'Bearer ' + accessToken
+        },
+        payload: JSON.stringify(metadata),
+        muteHttpExceptions: true
+      }
+    );
+
+    if (response.getResponseCode() === 200) {
+      const sessionUrl = response.getHeaders()['Location'];
+      // Return accessToken so client can use same token for chunk uploads
+      return { success: true, sessionUrl: sessionUrl, accessToken: accessToken };
+    } else {
+      Logger.log('ERROR creating upload session: ' + response.getContentText());
+      return { success: false, message: response.getContentText() };
+    }
+  } catch (error) {
+    Logger.log('ERROR in createUploadSession: ' + error.toString());
+    return { success: false, message: error.message };
+  }
+}
+
+/**
  * Test configuration
  */
 function testConfig() {
@@ -235,4 +331,12 @@ function testConfig() {
   const service = getOAuthService();
   Logger.log('OAuth service initialized: ' + (service ? 'Yes' : 'No'));
   Logger.log('User authorized: ' + (service.hasAccess() ? 'Yes' : 'No'));
+}
+
+/**
+ * Clears all stored OAuth data - run this to fix state token errors
+ */
+function clearAllAuth() {
+  PropertiesService.getUserProperties().deleteAllProperties();
+  Logger.log('All user properties cleared');
 }
