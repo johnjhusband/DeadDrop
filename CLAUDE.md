@@ -5,8 +5,8 @@
 **ALWAYS increment version numbers when modifying code files.**
 
 Files that need version updates:
-- `Code.gs` - header comment (e.g., `DeadDrop v3.5.10 - Backend`)
-- `Uploads.html` - header comment (e.g., `DeadDrop v3.5.10 - Frontend`)
+- `Code.gs` - header comment (e.g., `DeadDrop v3.5.13 - Backend`)
+- `Uploads.html` - header comment (e.g., `DeadDrop v3.5.13 - Frontend`)
 - `INSTALL.md` - title and changelog
 
 When making changes:
@@ -33,6 +33,8 @@ User deploys manually to Google Apps Script by copying file contents. After code
 
 - OAuth2 library handles user authentication
 - DriveApp creates folders (runs as script owner)
-- Folders are shared with authenticated user so their token can upload
-- Chunk uploads use user's OAuth token (returned from createUploadSession)
+- Folders are shared with authenticated user so their token can access them
+- Chunk uploads are proxied through server (browser -> Apps Script -> Drive API) to avoid CORS
+- uploadChunk() server function receives base64 chunks and forwards to Drive API
+- Chunk size is 32MB (must fit in google.script.run ~50MB limit after base64 encoding)
 - `executeAs: USER_DEPLOYING` in appsscript.json means server code runs as owner

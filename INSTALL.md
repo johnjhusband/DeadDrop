@@ -211,7 +211,7 @@
 5. Click **Continue** → **Allow**
 6. Popup closes automatically
 7. Main page should now show upload interface
-8. Click **Choose folder** → select test folder
+8. Click **Upload Folder** → select test folder
 9. Upload starts automatically → verify files upload to Drive
 
 ---
@@ -231,7 +231,7 @@ Instructions:
 1. Click the link
 2. Sign in with any Google account (Gmail or work account)
 3. (Optional) Enter a project name for your upload
-4. Click "Choose folder" and select your entire project folder
+4. Click "Upload Folder" and select your entire project folder
 5. Upload starts automatically
 6. Wait for all files to complete
 
