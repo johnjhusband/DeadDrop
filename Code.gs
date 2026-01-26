@@ -1,8 +1,11 @@
 // Code.gs
 /**
- * DeadDrop v3.5.13 - Backend
+ * DeadDrop v3.5.14 - Backend
  * Server-Side OAuth + Drive API File/Folder Upload
  * Supports: Desktop (file + folder), Mobile (file only)
+ *
+ * v3.5.14 Update (2026-01-26):
+ * - Added detailed logging to uploadChunk() for debugging server-side failures
  *
  * v3.5.13 Update (2026-01-26):
  * - Added uploadChunk() server-side function to proxy chunk uploads (avoids CORS)
@@ -361,11 +364,17 @@ function createUploadSession(fileName, mimeType, parentFolderId) {
  */
 function uploadChunk(sessionUrl, chunkBase64, start, end, totalSize) {
   try {
+    Logger.log('uploadChunk START: bytes ' + start + '-' + (end - 1) + '/' + totalSize);
+    Logger.log('uploadChunk: base64 length = ' + chunkBase64.length);
+
     const chunkData = Utilities.base64Decode(chunkBase64);
+    Logger.log('uploadChunk: decoded to ' + chunkData.length + ' bytes');
+
     const contentRange = 'bytes ' + start + '-' + (end - 1) + '/' + totalSize;
+    Logger.log('uploadChunk: Content-Range = ' + contentRange);
+    Logger.log('uploadChunk: session URL = ' + sessionUrl.substring(0, 80) + '...');
 
-    Logger.log('uploadChunk: ' + contentRange + ' (' + chunkData.length + ' bytes)');
-
+    Logger.log('uploadChunk: calling UrlFetchApp.fetch...');
     const response = UrlFetchApp.fetch(sessionUrl, {
       method: 'PUT',
       headers: {
@@ -374,23 +383,26 @@ function uploadChunk(sessionUrl, chunkBase64, start, end, totalSize) {
       payload: chunkData,
       muteHttpExceptions: true
     });
+    Logger.log('uploadChunk: fetch completed');
 
     const status = response.getResponseCode();
-    Logger.log('uploadChunk response: ' + status);
+    Logger.log('uploadChunk: response status = ' + status);
 
     if (status === 200 || status === 201) {
-      // Upload complete
+      Logger.log('uploadChunk: SUCCESS - upload complete');
       return { success: true, status: status, complete: true };
     } else if (status === 308) {
-      // Chunk received, more expected
+      Logger.log('uploadChunk: SUCCESS - chunk received, more expected');
       return { success: true, status: status, complete: false };
     } else {
-      Logger.log('uploadChunk error: ' + response.getContentText());
-      return { success: false, status: status, message: response.getContentText() };
+      const errorBody = response.getContentText();
+      Logger.log('uploadChunk ERROR: status=' + status + ' body=' + errorBody);
+      return { success: false, status: status, message: 'HTTP ' + status + ': ' + errorBody };
     }
   } catch (error) {
-    Logger.log('ERROR in uploadChunk: ' + error.toString());
-    return { success: false, message: error.message };
+    Logger.log('uploadChunk EXCEPTION: ' + error.toString());
+    Logger.log('uploadChunk EXCEPTION stack: ' + error.stack);
+    return { success: false, message: 'Server exception: ' + error.message };
   }
 }
 

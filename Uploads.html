@@ -1,9 +1,13 @@
 <!-- Uploads.html -->
 <!DOCTYPE html>
 <!--
-  DeadDrop v3.5.13 - Frontend
+  DeadDrop v3.5.14 - Frontend
   Server-Side OAuth + Drive API for File/Folder Upload
   Supports: Desktop (file + folder), Mobile (file only)
+
+  v3.5.14 Update (2026-01-26):
+  - Added detailed logging for server-side chunk upload failures
+  - Shows elapsed time and suggests timeout/memory issues
 
   v3.5.13 Update (2026-01-26):
   - Proxy chunk uploads through server to avoid CORS (browser -> Apps Script -> Drive API)
@@ -941,14 +945,26 @@
           });
 
           // Upload chunk via server (avoids CORS)
-          const chunkResult = await new Promise((resolve, reject) => {
-            google.script.run
-              .withSuccessHandler(resolve)
-              .withFailureHandler(reject)
-              .uploadChunk(sessionUrl, chunkBase64, start, end, file.size);
-          });
-
-          log('Chunk result: ' + JSON.stringify(chunkResult));
+          log('Sending chunk to server...');
+          const startTime = Date.now();
+          let chunkResult;
+          try {
+            chunkResult = await new Promise((resolve, reject) => {
+              google.script.run
+                .withSuccessHandler(resolve)
+                .withFailureHandler((error) => {
+                  reject(new Error('Server call failed: ' + (error.message || error)));
+                })
+                .uploadChunk(sessionUrl, chunkBase64, start, end, file.size);
+            });
+          } catch (serverError) {
+            const elapsed = Math.round((Date.now() - startTime) / 1000);
+            log('Server call failed after ' + elapsed + 's: ' + serverError.message, true);
+            log('This may be a timeout (60s limit) or memory issue on server', true);
+            throw serverError;
+          }
+          const elapsed = Math.round((Date.now() - startTime) / 1000);
+          log('Server responded in ' + elapsed + 's: ' + JSON.stringify(chunkResult));
 
           if (!chunkResult.success) {
             throw new Error('Chunk upload failed: ' + (chunkResult.message || 'HTTP ' + chunkResult.status));
