@@ -1,8 +1,11 @@
 // Code.gs
 /**
- * DeadDrop v3.5.15 - Backend
+ * DeadDrop v3.5.16 - Backend
  * Server-Side OAuth + Drive API File/Folder Upload
  * Supports: Desktop (file + folder), Mobile (file only)
+ *
+ * v3.5.16 Update (2026-01-26):
+ * - Added Authorization header to uploadChunk() to prevent session invalidation
  *
  * v3.5.14 Update (2026-01-26):
  * - Added detailed logging to uploadChunk() for debugging server-side failures
@@ -360,12 +363,14 @@ function createUploadSession(fileName, mimeType, parentFolderId) {
  * @param {number} start - Start byte position
  * @param {number} end - End byte position (exclusive)
  * @param {number} totalSize - Total file size
+ * @param {string} accessToken - OAuth access token for authorization
  * @returns {Object} {success, status, message}
  */
-function uploadChunk(sessionUrl, chunkBase64, start, end, totalSize) {
+function uploadChunk(sessionUrl, chunkBase64, start, end, totalSize, accessToken) {
   try {
     Logger.log('uploadChunk START: bytes ' + start + '-' + (end - 1) + '/' + totalSize);
     Logger.log('uploadChunk: base64 length = ' + chunkBase64.length);
+    Logger.log('uploadChunk: accessToken provided = ' + (accessToken ? 'yes' : 'no'));
 
     const chunkData = Utilities.base64Decode(chunkBase64);
     Logger.log('uploadChunk: decoded to ' + chunkData.length + ' bytes');
@@ -378,7 +383,8 @@ function uploadChunk(sessionUrl, chunkBase64, start, end, totalSize) {
     const response = UrlFetchApp.fetch(sessionUrl, {
       method: 'PUT',
       headers: {
-        'Content-Range': contentRange
+        'Content-Range': contentRange,
+        'Authorization': 'Bearer ' + accessToken
       },
       payload: chunkData,
       muteHttpExceptions: true
