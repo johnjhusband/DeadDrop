@@ -1,8 +1,12 @@
 // Code.gs
 /**
- * DeadDrop v3.5.16 - Backend
+ * DeadDrop v3.5.17 - Backend
  * Server-Side OAuth + Drive API File/Folder Upload
  * Supports: Desktop (file + folder), Mobile (file only)
+ *
+ * v3.5.17 Update (2026-01-26):
+ * - Added supportsAllDrives=true to createUploadSession() for cross-workspace folder access
+ * - Fixes 404 "File not found" on final chunk when uploading to folders shared across workspaces
  *
  * v3.5.16 Update (2026-01-26):
  * - Added Authorization header to uploadChunk() to prevent session invalidation
@@ -329,7 +333,7 @@ function createUploadSession(fileName, mimeType, parentFolderId) {
     };
 
     const response = UrlFetchApp.fetch(
-      'https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable',
+      'https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&supportsAllDrives=true',
       {
         method: 'POST',
         contentType: 'application/json',

@@ -1,9 +1,22 @@
 <!-- INSTALL.md -->
-# Installation Instructions - DeadDrop v3.5.13
+# Installation Instructions - DeadDrop v3.5.17
 
 **Server-Side OAuth + Drive API for Folder Upload (750GB per file, unlimited duration)**
 
 **Time Required:** 35-50 minutes
+
+**v3.5.17 Changes (2026-01-26):**
+- Added supportsAllDrives=true to fix cross-workspace folder access
+- Fixes 404 "File not found" error on final chunk when customer's workspace differs from owner's
+
+**v3.5.16 Changes (2026-01-26):**
+- Added Authorization header to uploadChunk() to prevent session invalidation
+
+**v3.5.15 Changes (2026-01-26):**
+- Reduced chunk size from 32MB to 16MB to avoid 60s UrlFetchApp timeout
+
+**v3.5.14 Changes (2026-01-26):**
+- Added detailed logging to uploadChunk() for debugging server-side failures
 
 **v3.5.13 Changes (2026-01-26):**
 - Proxy chunk uploads through server to avoid CORS blocking
