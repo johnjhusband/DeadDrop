@@ -581,8 +581,190 @@ async function createFolderHierarchyClientSide(rootFolderId, folderPaths) {
 
 ---
 
-**Current Status:** v3.5.5 working. Admin must sign in first to initialize OAuth.
+## v3.5.6 - v3.5.13: CORS Deep Fix & Server Proxy (2026-01-26)
 
-**deaddrop3 folder:** Contains failed v4.0.0 experiment (deleted per user request).
+### The Problem
+
+**v3.5.6 Attempt:**
+- Changed `createUploadSession()` to use `ScriptApp.getOAuthToken()` (owner's token)
+- Rationale: DriveApp creates folders as owner, so uploads should use owner's token
+- Result: 404 error - user token couldn't access folders created by owner
+
+**v3.5.7-v3.5.8 Attempts:**
+- Added folder sharing: `prepareUpload()` now shares folder with authenticated user via `addEditor()`
+- Added `userinfo.email` scope to get user's email for sharing
+- Changed `createUploadSession()` back to OAuth2 library token (user's token)
+- Result: Still failed with "Failed to fetch" error
+
+**Root Cause Discovery:**
+- Browser console showed CORS error: "No 'Access-Control-Allow-Origin' header is present"
+- The resumable upload session URL (googleapis.com) does NOT allow cross-origin requests from googleusercontent.com
+- This is a fundamental limitation - browsers on Apps Script web apps cannot directly call googleapis.com
+
+### The Solution (v3.5.13)
+
+**Server-side chunk upload proxy:**
+
+1. **createUploadSession()** - Creates resumable session server-side, returns session URL
+2. **uploadChunk()** - NEW server function that receives chunks and forwards to Drive API
+3. Client sends chunks to Apps Script via `google.script.run.uploadChunk()`
+4. Apps Script calls Drive API via `UrlFetchApp.fetch()` (no CORS issues)
+5. Chunk size reduced from 256MB to 32MB (google.script.run has ~50MB limit after base64 encoding)
+
+**Key Code:**
+
+```javascript
+// Code.gs - Server-side chunk upload
+function uploadChunk(sessionUrl, chunkBase64, start, end, totalSize) {
+  const chunkData = Utilities.base64Decode(chunkBase64);
+  const contentRange = 'bytes ' + start + '-' + (end - 1) + '/' + totalSize;
+
+  const response = UrlFetchApp.fetch(sessionUrl, {
+    method: 'PUT',
+    headers: { 'Content-Range': contentRange },
+    payload: chunkData,
+    muteHttpExceptions: true
+  });
+
+  return { success: true, status: response.getResponseCode() };
+}
+```
+
+```javascript
+// Uploads.html - Client-side chunk upload via server
+const chunkBase64 = await blobToBase64(chunk);
+const result = await new Promise((resolve, reject) => {
+  google.script.run
+    .withSuccessHandler(resolve)
+    .withFailureHandler(reject)
+    .uploadChunk(sessionUrl, chunkBase64, start, end, file.size);
+});
+```
+
+### What I Learned
+
+**CORS with Google APIs from Apps Script Web Apps:**
+1. Apps Script web apps run on `googleusercontent.com`
+2. Google's Drive API (googleapis.com) does NOT return CORS headers for this origin
+3. Direct browser fetch to googleapis.com is BLOCKED regardless of token type
+4. The only way around this is server-side proxy via UrlFetchApp
+
+**Token Types (Updated Understanding):**
+1. **OAuth2 Library Token** - User's token from OAuth flow, needed for user identity but doesn't bypass CORS
+2. **ScriptApp.getOAuthToken()** - Owner's token, works for server-side UrlFetchApp only
+3. Neither token bypasses CORS - CORS is about origins, not authentication
+
+**google.script.run Limits:**
+- Maximum payload: ~50MB
+- Base64 encoding adds ~33% overhead
+- Safe chunk size: 32MB (becomes ~42MB in base64)
+
+**Architecture Evolution:**
+- v3.4: Client creates folders via Drive API (no CORS issue for folder creation??)
+- v3.5.1: Server creates folders via DriveApp (permission fix)
+- v3.5.3: Server creates upload session, client uploads chunks (CORS worked temporarily?)
+- v3.5.13: Server creates session AND uploads chunks (only reliable solution)
+
+**Why Did v3.5.3 Work Before?**
+- Unclear - possibly different CORS behavior, different testing environment, or browser/network differences
+- The current solution (server proxy) is the architecturally correct approach
+
+### Other v3.5.x Changes
+
+**v3.5.6 (2026-01-25):**
+- Upload starts automatically when files selected (removed Start Upload button)
+- Attempted fix with owner's token (failed)
+
+**v3.5.8 (2026-01-26):**
+- Added `userinfo.email` scope for folder sharing
+
+**v3.5.9 (2026-01-26):**
+- Changed button text from "Choose" to "Upload"
+- Note: Native browser file picker still shows "Open" (cannot be changed)
+
+**v3.5.10-v3.5.12 (2026-01-26):**
+- Improved error logging to UI instead of console
+- Various CORS fix attempts before discovering server proxy solution
+
+### Files Changed
+
+**Code.gs:**
+- Added `uploadChunk()` function
+- `prepareUpload()` now shares folder with user via `addEditor()`
+- OAuth scope includes `userinfo.email`
+
+**Uploads.html:**
+- Chunk uploads via `google.script.run.uploadChunk()` instead of direct fetch
+- Chunk size reduced to 32MB
+- Detailed error logging in UI
+- Button text changed to "Upload"
+- Upload starts automatically on file selection
+
+**appsscript.json:**
+- Added to repo (was missing)
+- Contains OAuth2 library reference
+- `executeAs: "USER_DEPLOYING"` - critical for server-side code running as owner
+
+**CLAUDE.md:**
+- Created with versioning rules
+- Always increment version when modifying code
+
+---
+
+## Current Code State (v3.5.13)
+
+### Architecture
+
+```
+User selects files
+  ↓
+Frontend: Calls google.script.run.prepareUpload()
+  ↓
+Backend: Creates folder, shares with user, returns folderId
+  ↓
+Frontend: For each file, calls google.script.run.createUploadSession()
+  ↓
+Backend: Creates resumable session via UrlFetchApp, returns sessionUrl
+  ↓
+Frontend: Converts chunks to base64, calls google.script.run.uploadChunk()
+  ↓
+Backend: Decodes base64, uploads to Drive via UrlFetchApp
+  ↓
+Frontend: Shows progress, handles completion
+```
+
+### Key Files
+
+- **Code.gs** - Backend with OAuth, folder creation, upload session, chunk proxy
+- **Uploads.html** - Frontend UI and upload orchestration
+- **appsscript.json** - Manifest with OAuth2 library, webapp settings
+- **INSTALL.md** - 9-step installation guide
+- **CLAUDE.md** - AI assistant versioning rules
+
+### OAuth Scopes
+
+- `drive.file` - Access to files created by the app
+- `userinfo.email` - Get user's email for folder sharing
+
+### Critical Settings
+
+- Chunk size: 32MB (google.script.run limit)
+- Execute as: USER_DEPLOYING (owner's permissions for DriveApp)
+- Folder sharing: User added as editor for upload access
+
+---
+
+## Critical Reminders (Updated)
+
+1. **Client-side fetch to googleapis.com does NOT work from Apps Script web apps** - must proxy through server
+2. **Chunk size must be <50MB** due to google.script.run payload limit
+3. **Always increment version** when modifying code files
+4. **Admin must sign in first** to initialize OAuth
+5. **Folders must be shared** with user for their token to access them
+6. **Native file picker button text cannot be changed** - it's OS/browser controlled
+
+---
+
+**Current Status:** v3.5.13 working with server-side chunk upload proxy.
 
 **END OF SESSION MEMORY**

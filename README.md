@@ -1,4 +1,4 @@
-# DeadDrop v3.5.3
+# DeadDrop v3.5.13
 
 **Google Apps Script folder upload application with server-side OAuth authentication**
 
@@ -13,7 +13,7 @@ Upload entire folders with all subfolders and files directly to Google Drive. Su
 - ✅ **Preserve Structure** - Original folder hierarchy maintained in Drive
 - ✅ **Large Files** - Individual files up to 750GB each
 - ✅ **Unlimited Duration** - Server-side OAuth with automatic token management
-- ✅ **Resumable Uploads** - 256MB chunks
+- ✅ **Resumable Uploads** - 32MB chunks (proxied through server)
 - ✅ **Multi-User** - Each user authorizes with their own Google account
 - ✅ **Mobile Support** - iPhone and Android file uploads
 
@@ -35,11 +35,11 @@ See [INSTALL.md](INSTALL.md) for complete installation instructions.
 
 ## Architecture
 
-**Version:** v3.5.3 (Server-Side OAuth + Server-Side Upload Sessions)
+**Version:** v3.5.13 (Server-Side OAuth + Server-Side Upload Proxy)
 
 **Frontend:**
 - HTML/JavaScript (no frameworks)
-- Google Drive API v3 for chunk uploads
+- Chunk uploads proxied through Apps Script (avoids CORS)
 - OAuth handled server-side (no client-side library)
 - Mobile device detection and adaptive UI
 
@@ -48,6 +48,7 @@ See [INSTALL.md](INSTALL.md) for complete installation instructions.
 - apps-script-oauth2 library for OAuth management
 - Server-side upload session creation
 - Server-side folder creation
+- Server-side chunk upload proxy (uploadChunk function)
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for detailed technical documentation.
 
@@ -55,11 +56,13 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for detailed technical documentation.
 
 ## Files
 
-- `Code.gs` - Apps Script backend (300 lines)
-- `Uploads.html` - Upload interface (818 lines)
+- `Code.gs` - Apps Script backend
+- `Uploads.html` - Upload interface
+- `appsscript.json` - Apps Script manifest
 - `INSTALL.md` - Installation guide
 - `ARCHITECTURE.md` - Technical documentation
 - `PRD.md` - Product requirements
+- `CLAUDE.md` - AI assistant instructions
 - `SESSION_MEMORY.md` - Development notes
 
 ---
@@ -91,9 +94,10 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for detailed technical documentation.
 
 - OAuth 2.0 authentication required
 - Tokens stored server-side (PropertiesService.getUserProperties)
-- Files upload directly from browser to Drive (no proxy)
-- Minimal scope: `drive.file` (only files created by app)
+- Chunk uploads proxied through Apps Script server (avoids CORS)
+- Minimal scope: `drive.file` + `userinfo.email`
 - Users authenticate with their own Google accounts
+- Folders shared with uploading user for access control
 
 ---
 
@@ -113,6 +117,19 @@ MIT License - See repository for details
 ---
 
 ## Version History
+
+### v3.5.13 (2026-01-26)
+- Proxy chunk uploads through server to avoid CORS blocking
+- Added uploadChunk() server function
+- Reduced chunk size from 256MB to 32MB (google.script.run limit)
+- Added userinfo.email scope for folder sharing
+- Folders shared with authenticated user for upload access
+- Changed button text from "Choose" to "Upload"
+- Added detailed error logging
+
+### v3.5.6 (2026-01-25)
+- Upload starts automatically when files selected (removed Start Upload button)
+- Fixed 404 upload error
 
 ### v3.5.3 (2025-01-16)
 - Fixed CORS error on chunk uploads

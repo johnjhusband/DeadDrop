@@ -1,7 +1,7 @@
-# DeadDrop v3.5.3 - Technical Architecture Documentation
+# DeadDrop v3.5.13 - Technical Architecture Documentation
 
-**Last Updated:** 2025-01-16
-**Version:** v3.5.3 (Server-Side Upload Sessions)
+**Last Updated:** 2026-01-26
+**Version:** v3.5.13 (Server-Side Upload Proxy)
 
 ---
 
@@ -20,12 +20,12 @@
 
 ## Overview
 
-DeadDrop v3.5.3 uses **server-side OAuth** via the apps-script-oauth2 library and Google Drive API v3 for file/folder uploads.
+DeadDrop v3.5.13 uses **server-side OAuth** via the apps-script-oauth2 library and Google Drive API v3 for file/folder uploads.
 
 **Architecture Pattern:**
-- **Client-side:** OAuth UI + Chunk uploads to Drive API
-- **Server-side:** OAuth2 library handles authentication, token storage, refresh, upload session creation, and folder creation
-- **No file proxy:** File chunks upload directly from browser to Drive (bandwidth efficient)
+- **Client-side:** OAuth UI + File selection + Progress display
+- **Server-side:** OAuth2 library handles authentication, token storage, refresh, upload session creation, folder creation, and chunk upload proxy
+- **Server proxy:** File chunks are sent to Apps Script which forwards to Drive API (required due to CORS restrictions)
 
 **Key Capabilities:**
 - Folder selection (entire folder with subfolders) - desktop only
@@ -57,7 +57,8 @@ DeadDrop v3.5.3 uses **server-side OAuth** via the apps-script-oauth2 library an
 - Method: Resumable upload protocol
 - Max file size: 5TB (limited to 750GB by daily quota)
 - Upload session created server-side via `google.script.run.createUploadSession()`
-- Access token returned from session creation for chunk uploads
+- Chunks uploaded via `google.script.run.uploadChunk()` (server proxy, avoids CORS)
+- Chunk size: 32MB (must fit in google.script.run ~50MB limit after base64 encoding)
 
 ### Backend
 
@@ -106,7 +107,7 @@ function getOAuthService() {
     .setClientSecret(config.OAUTH_CLIENT_SECRET)
     .setCallbackFunction('authCallback')
     .setPropertyStore(PropertiesService.getUserProperties())
-    .setScope('https://www.googleapis.com/auth/drive.file')
+    .setScope('https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/userinfo.email')
     .setParam('access_type', 'offline')
     .setParam('prompt', 'consent');
 }
@@ -250,26 +251,51 @@ const initResponse = await fetch(
 const sessionUrl = initResponse.headers.get('Location');
 ```
 
-**Upload File in Chunks:**
+**Upload File in Chunks (via Server Proxy):**
 ```javascript
-const CHUNK_SIZE = 256 * 1024 * 1024; // 256MB
+const CHUNK_SIZE = 32 * 1024 * 1024; // 32MB (must fit in google.script.run limit)
 const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
 
 for (let i = 0; i < totalChunks; i++) {
   const start = i * CHUNK_SIZE;
   const end = Math.min(start + CHUNK_SIZE, file.size);
   const chunk = file.slice(start, end);
-  
-  const chunkResponse = await fetch(sessionUrl, {
-    method: 'PUT',
-    headers: {
-      'Content-Range': `bytes ${start}-${end-1}/${file.size}`
-    },
-    body: chunk
+
+  // Convert chunk to base64 for transfer to server
+  const chunkBase64 = await new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result.split(',')[1]);
+    reader.onerror = reject;
+    reader.readAsDataURL(chunk);
   });
-  
+
+  // Upload via server (avoids CORS)
+  const result = await new Promise((resolve, reject) => {
+    google.script.run
+      .withSuccessHandler(resolve)
+      .withFailureHandler(reject)
+      .uploadChunk(sessionUrl, chunkBase64, start, end, file.size);
+  });
+
   // Status 308 = Resume Incomplete (continue)
   // Status 200/201 = Upload Complete
+}
+```
+
+**Server-Side uploadChunk Function:**
+```javascript
+function uploadChunk(sessionUrl, chunkBase64, start, end, totalSize) {
+  const chunkData = Utilities.base64Decode(chunkBase64);
+  const contentRange = 'bytes ' + start + '-' + (end - 1) + '/' + totalSize;
+
+  const response = UrlFetchApp.fetch(sessionUrl, {
+    method: 'PUT',
+    headers: { 'Content-Range': contentRange },
+    payload: chunkData,
+    muteHttpExceptions: true
+  });
+
+  return { success: true, status: response.getResponseCode() };
 }
 ```
 
@@ -360,9 +386,10 @@ clearAllAuth()         // Clears all stored OAuth data (troubleshooting)
 
 **Upload Management:**
 ```javascript
-prepareUpload(projectName, totalFiles, totalSize)          // Creates root folder
+prepareUpload(projectName, totalFiles, totalSize)          // Creates root folder, shares with user
 createFolder(folderName, parentFolderId)                   // Creates single subfolder
 createUploadSession(fileName, mimeType, parentFolderId)    // Creates resumable upload session
+uploadChunk(sessionUrl, chunkBase64, start, end, totalSize) // Uploads chunk to Drive (proxy)
 ```
 
 **Configuration:**
@@ -402,10 +429,16 @@ Do NOT add googleusercontent.com (forbidden).
 
 ### 4. Token Scopes
 
-Use minimal scope:
-- `https://www.googleapis.com/auth/drive.file`
-- Only allows access to files created by the app
-- More secure than full Drive access
+Use minimal scopes:
+- `https://www.googleapis.com/auth/drive.file` - Access to files created by the app
+- `https://www.googleapis.com/auth/userinfo.email` - Get user's email for folder sharing
+
+### 5. Folder Sharing
+
+Folders created by DriveApp belong to the script owner. To allow users to upload:
+- prepareUpload() gets user's email via userinfo API
+- Folder is shared with user as editor via addEditor()
+- User's OAuth token can then access the folder for uploads
 
 ---
 

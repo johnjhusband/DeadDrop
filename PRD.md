@@ -1,7 +1,7 @@
 # Product Requirements Document: DeadDrop Video Upload System
 
-**Version:** 3.5
-**Date:** 2025-01-13
+**Version:** 3.5.13
+**Date:** 2026-01-26
 **Product Owner:** John
 **Target Users:** Law firm clients uploading professional video content to Wildfire Video
 
@@ -130,8 +130,8 @@ Build a video upload system using Google Drive API with OAuth that:
 
 **NFR-003: Security**
 - OAuth 2.0 authentication required
-- Minimal scope (drive access for file creation only)
-- No server-side file proxy (direct browser-to-Drive upload)
+- Minimal scope (drive.file + userinfo.email)
+- Chunk uploads proxied through Apps Script server (required due to CORS)
 
 **NFR-004: Cost**
 - Infrastructure: $0/month (Google Apps Script free tier)
@@ -275,6 +275,14 @@ Acceptance Criteria:
 ---
 
 ## 8. VERSION HISTORY
+
+**v3.5.13 (2026-01-26):**
+- Chunk uploads now proxied through server (CORS fix)
+- Added uploadChunk() server function
+- Reduced chunk size to 32MB (google.script.run limit)
+- Added userinfo.email scope for folder sharing
+- Upload starts automatically when files selected
+- Changed button text from "Choose" to "Upload"
 
 **v3.5 (2025-01-13):**
 - Added mobile device support (iPhone, Android) for file uploads (FR-003, TR-003)
