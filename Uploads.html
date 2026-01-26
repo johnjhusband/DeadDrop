@@ -1,9 +1,12 @@
 <!-- Uploads.html -->
 <!DOCTYPE html>
 <!--
-  DeadDrop v3.5.14 - Frontend
+  DeadDrop v3.5.15 - Frontend
   Server-Side OAuth + Drive API for File/Folder Upload
   Supports: Desktop (file + folder), Mobile (file only)
+
+  v3.5.15 Update (2026-01-26):
+  - Reduced chunk size from 32MB to 16MB to avoid 60s UrlFetchApp timeout
 
   v3.5.14 Update (2026-01-26):
   - Added detailed logging for server-side chunk upload failures
@@ -535,7 +538,7 @@
   <script>
     // ========== GLOBAL VARIABLES ==========
 
-    const CHUNK_SIZE = 32 * 1024 * 1024; // 32MB chunks (must fit in google.script.run ~50MB limit after base64)
+    const CHUNK_SIZE = 16 * 1024 * 1024; // 16MB chunks (smaller = faster to avoid 60s UrlFetchApp timeout)
     const MAX_FILE_SIZE = 750 * 1024 * 1024 * 1024; // 750GB
 
     let selectedFiles = [];
