@@ -1,8 +1,39 @@
-# Installation Instructions - DeadDrop v3.5.5
+<!-- INSTALL.md -->
+# Installation Instructions - DeadDrop v3.5.13
 
 **Server-Side OAuth + Drive API for Folder Upload (750GB per file, unlimited duration)**
 
 **Time Required:** 35-50 minutes
+
+**v3.5.13 Changes (2026-01-26):**
+- Proxy chunk uploads through server to avoid CORS blocking
+
+**v3.5.12 Changes (2026-01-26):**
+- Added detailed chunk upload logging for debugging
+
+**v3.5.11 Changes (2026-01-26):**
+- Removed Authorization header from chunk uploads (CORS fix attempt)
+
+**v3.5.10 Changes (2026-01-26):**
+- Improved error logging to show in UI instead of console
+
+**v3.5.9 Changes (2026-01-26):**
+- Changed button text from "Choose" to "Upload"
+- Added detailed error logging for debugging
+
+**v3.5.8 Changes (2026-01-26):**
+- Added userinfo.email scope (fixes 401 error on folder sharing)
+
+**v3.5.7 Changes (2026-01-26):**
+- Fixed CORS "Failed to fetch" error on chunk uploads
+- Folder now shared with user so their OAuth token can access it for uploads
+
+**v3.5.6 Changes (2026-01-25):**
+- Upload now starts automatically when files/folder selected (removed Start Upload button)
+- Fixed 404 upload error (createUploadSession uses owner's token to match DriveApp)
+
+**v3.5.5 Changes (2025-01-25):**
+- Fixed duplicate folder nesting bug in folder uploads
 
 **v3.5.5 Changes (2025-01-16):**
 - Added Step 8: Admin Authorization - admin must sign in first via web app to initialize OAuth
@@ -30,6 +61,12 @@
 9. Name it: `Uploads`
 10. Copy all code from `Uploads.html` in this repo
 11. Paste, click Save
+12. Click gear icon ⚙️ (Project Settings)
+13. Check "Show appsscript.json manifest file in editor"
+14. Click `< Editor` to go back
+15. Click `appsscript.json` in the file list
+16. Replace all contents with `appsscript.json` from this repo
+17. Click Save
 
 ---
 
@@ -175,7 +212,7 @@
 6. Popup closes automatically
 7. Main page should now show upload interface
 8. Click **Choose folder** → select test folder
-9. Click **Start Upload** → verify files upload to Drive
+9. Upload starts automatically → verify files upload to Drive
 
 ---
 
@@ -195,7 +232,7 @@ Instructions:
 2. Sign in with any Google account (Gmail or work account)
 3. (Optional) Enter a project name for your upload
 4. Click "Choose folder" and select your entire project folder
-5. Click "Start Upload"
+5. Upload starts automatically
 6. Wait for all files to complete
 
 Features:

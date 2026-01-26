@@ -1,8 +1,41 @@
+<!-- Uploads.html -->
 <!DOCTYPE html>
 <!--
-  DeadDrop v3.5.3 - Frontend
+  DeadDrop v3.5.13 - Frontend
   Server-Side OAuth + Drive API for File/Folder Upload
   Supports: Desktop (file + folder), Mobile (file only)
+
+  v3.5.13 Update (2026-01-26):
+  - Proxy chunk uploads through server to avoid CORS (browser -> Apps Script -> Drive API)
+  - Reduced chunk size from 256MB to 32MB (google.script.run has ~50MB limit)
+
+  v3.5.12 Update (2026-01-26):
+  - Added detailed chunk upload logging (file size, chunk count, each request, full error details)
+
+  v3.5.11 Update (2026-01-26):
+  - Removed Authorization header from chunk uploads (session URL contains auth, header causes CORS preflight failure)
+
+  v3.5.10 Update (2026-01-26):
+  - Improved error logging to show in UI instead of console
+
+  v3.5.9 Update (2026-01-26):
+  - Changed button text from "Choose" to "Upload"
+  - Added detailed error logging for chunk upload failures
+
+  v3.5.8 Update (2026-01-26):
+  - Backend fix: added userinfo.email scope for folder sharing
+
+  v3.5.7 Update (2026-01-26):
+  - Backend fix: folder shared with user so their OAuth token works for uploads
+
+  v3.5.6 Update (2026-01-25):
+  - Upload now starts automatically when files/folder selected (removed Start Upload button)
+  - Fixed 404 upload error (backend fix: uses owner's token for upload sessions)
+
+  v3.5.5 Update (2025-01-25):
+  - Fixed duplicate folder nesting bug in folder uploads
+  - extractFolderPaths() now strips root folder name (already in upload folder name)
+  - uploadFile() now strips root folder name from folderPath
 
   v3.5.3 Update (2025-01-16):
   - Fixed CORS error on chunk uploads
@@ -477,9 +510,8 @@
 
         <!-- Upload Controls -->
         <div id="uploadControls" style="margin-top: 20px; display: none;">
-          <button id="uploadBtn" class="upload-btn">Start Upload</button>
           <button id="cancelBtn" class="cancel-btn" style="display: none;">Cancel Upload</button>
-          <button id="clearBtn" class="clear-btn">Clear Selection</button>
+          <button id="clearBtn" class="clear-btn" style="display: none;">Clear Selection</button>
         </div>
 
         <!-- Completion Summary -->
@@ -499,7 +531,7 @@
   <script>
     // ========== GLOBAL VARIABLES ==========
 
-    const CHUNK_SIZE = 256 * 1024 * 1024; // 256MB chunks
+    const CHUNK_SIZE = 32 * 1024 * 1024; // 32MB chunks (must fit in google.script.run ~50MB limit after base64)
     const MAX_FILE_SIZE = 750 * 1024 * 1024 * 1024; // 750GB
 
     let selectedFiles = [];
@@ -542,7 +574,7 @@
 
         const fileBtn = document.createElement('button');
         fileBtn.className = 'selection-btn primary';
-        fileBtn.textContent = 'Choose Files';
+        fileBtn.textContent = 'Upload Files';
         fileBtn.onclick = (e) => { e.stopPropagation(); document.getElementById('fileInput').click(); };
         selectionButtons.appendChild(fileBtn);
 
@@ -554,14 +586,14 @@
 
         const fileBtn = document.createElement('button');
         fileBtn.className = 'selection-btn';
-        fileBtn.textContent = 'Choose Files';
+        fileBtn.textContent = 'Upload Files';
         fileBtn.onclick = (e) => { e.stopPropagation(); document.getElementById('fileInput').click(); };
         selectionButtons.appendChild(fileBtn);
 
         if (supportsFolderUpload) {
           const folderBtn = document.createElement('button');
           folderBtn.className = 'selection-btn primary';
-          folderBtn.textContent = 'Choose Folder';
+          folderBtn.textContent = 'Upload Folder';
           folderBtn.onclick = (e) => { e.stopPropagation(); document.getElementById('folderInput').click(); };
           selectionButtons.appendChild(folderBtn);
         }
@@ -583,7 +615,6 @@
       document.getElementById('signInBtn').addEventListener('click', handleSignIn);
       document.getElementById('fileInput').addEventListener('change', handleFileSelect);
       document.getElementById('folderInput').addEventListener('change', handleFolderSelect);
-      document.getElementById('uploadBtn').addEventListener('click', startUpload);
       document.getElementById('clearBtn').addEventListener('click', clearSelection);
       document.getElementById('cancelBtn').addEventListener('click', () => {
         uploadCancelled = true;
@@ -704,6 +735,9 @@
 
       displayFiles();
       document.getElementById('uploadControls').style.display = 'block';
+
+      // Auto-start upload
+      startUpload();
     }
 
     function clearSelection() {
@@ -760,7 +794,6 @@
     async function startUpload() {
       log('Starting upload...');
 
-      document.getElementById('uploadBtn').disabled = true;
       document.getElementById('cancelBtn').style.display = 'inline-block';
       document.getElementById('clearBtn').style.display = 'none';
       uploadCancelled = false;
@@ -842,7 +875,6 @@
         log('ERROR in upload: ' + error.message, true);
         showError('Upload failed: ' + error.message);
       } finally {
-        document.getElementById('uploadBtn').disabled = false;
         document.getElementById('cancelBtn').style.display = 'none';
         document.getElementById('clearBtn').style.display = 'inline-block';
       }
@@ -860,6 +892,7 @@
         if (isFolder && file.webkitRelativePath) {
           const parts = file.webkitRelativePath.split('/');
           parts.pop(); // Remove filename
+          parts.shift(); // Remove root folder name (already in upload folder name)
           folderPath = parts.join('/');
         }
 
@@ -873,15 +906,21 @@
             .createUploadSession(file.name, file.type || 'application/octet-stream', targetFolderId);
         });
 
+        console.log('Session result:', sessionResult);
+
         if (!sessionResult.success) {
           throw new Error('Failed to initialize upload: ' + sessionResult.message);
         }
 
         const sessionUrl = sessionResult.sessionUrl;
-        const sessionToken = sessionResult.accessToken;
 
-        // Upload file in chunks (use same token that created session for CORS compatibility)
+        log('Session URL: ' + sessionUrl.substring(0, 80) + '...');
+        log('File size: ' + file.size + ' bytes');
+        log('File type: ' + (file.type || 'unknown'));
+
+        // Upload file in chunks via server (avoids CORS)
         const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+        log('Total chunks: ' + totalChunks + ' (chunk size: ' + CHUNK_SIZE + ')');
         let uploadedBytes = 0;
 
         for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++) {
@@ -891,17 +930,28 @@
           const end = Math.min(start + CHUNK_SIZE, file.size);
           const chunk = file.slice(start, end);
 
-          const chunkResponse = await fetch(sessionUrl, {
-            method: 'PUT',
-            headers: {
-              'Authorization': 'Bearer ' + sessionToken,
-              'Content-Range': 'bytes ' + start + '-' + (end - 1) + '/' + file.size
-            },
-            body: chunk
+          log('Chunk ' + (chunkIndex + 1) + '/' + totalChunks + ': bytes ' + start + '-' + (end - 1) + ' (' + chunk.size + ' bytes)');
+
+          // Convert chunk to base64
+          const chunkBase64 = await new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result.split(',')[1]);
+            reader.onerror = reject;
+            reader.readAsDataURL(chunk);
           });
 
-          if (!chunkResponse.ok && chunkResponse.status !== 308) {
-            throw new Error('Chunk upload failed: ' + chunkResponse.statusText);
+          // Upload chunk via server (avoids CORS)
+          const chunkResult = await new Promise((resolve, reject) => {
+            google.script.run
+              .withSuccessHandler(resolve)
+              .withFailureHandler(reject)
+              .uploadChunk(sessionUrl, chunkBase64, start, end, file.size);
+          });
+
+          log('Chunk result: ' + JSON.stringify(chunkResult));
+
+          if (!chunkResult.success) {
+            throw new Error('Chunk upload failed: ' + (chunkResult.message || 'HTTP ' + chunkResult.status));
           }
 
           uploadedBytes = end;
@@ -926,6 +976,7 @@
         if (file.webkitRelativePath) {
           const parts = file.webkitRelativePath.split('/');
           parts.pop(); // Remove filename
+          parts.shift(); // Remove root folder name (already in upload folder name)
 
           let currentPath = '';
           parts.forEach(part => {

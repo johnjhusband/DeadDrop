@@ -1,7 +1,31 @@
+// Code.gs
 /**
- * DeadDrop v3.5.5 - Backend
+ * DeadDrop v3.5.13 - Backend
  * Server-Side OAuth + Drive API File/Folder Upload
  * Supports: Desktop (file + folder), Mobile (file only)
+ *
+ * v3.5.13 Update (2026-01-26):
+ * - Added uploadChunk() server-side function to proxy chunk uploads (avoids CORS)
+ * - Browser sends chunks to Apps Script, which forwards to Drive API
+ *
+ * v3.5.8 Update (2026-01-26):
+ * - Added userinfo.email scope to get user's email for folder sharing
+ * - Fixes 401 error when prepareUpload() calls userinfo API
+ *
+ * v3.5.7 Update (2026-01-26):
+ * - Fixed CORS "Failed to fetch" error on chunk uploads
+ * - prepareUpload() now shares folder with authenticated user (addEditor)
+ * - createUploadSession() uses OAuth2 library token (user's token) for client-side compatibility
+ * - User token works because folder is shared with them
+ *
+ * v3.5.6 Update (2026-01-25):
+ * - Fixed 404 upload error: createUploadSession() now uses ScriptApp.getOAuthToken()
+ *   to match DriveApp folder creation (both use owner's credentials)
+ * - Previous OAuth2 library token caused 404 because user token can't access
+ *   folders created by DriveApp in owner's Drive
+ *
+ * v3.5.5 Update (2025-01-25):
+ * - Fixed duplicate folder nesting bug in folder uploads (frontend fix)
  *
  * v3.5.5 Update (2025-01-16):
  * - Admin must sign in first via web app to initialize OAuth (documented in INSTALL.md)
@@ -67,7 +91,7 @@ function getOAuthService() {
     .setClientSecret(config.OAUTH_CLIENT_SECRET)
     .setCallbackFunction('authCallback')
     .setPropertyStore(PropertiesService.getUserProperties())
-    .setScope('https://www.googleapis.com/auth/drive.file')
+    .setScope('https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/userinfo.email')
     .setParam('access_type', 'offline')
     .setParam('prompt', 'consent');
 }
@@ -186,6 +210,20 @@ function prepareUpload(projectName, totalFiles, totalSize) {
     const folderId = uploadFolder.getId();
 
     Logger.log('Batch upload folder created with ID: ' + folderId);
+
+    // Get authenticated user's email and share folder with them
+    // This allows user's OAuth token to access the folder for uploads
+    const service = getOAuthService();
+    const token = service.getAccessToken();
+    const userInfoResponse = UrlFetchApp.fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+      headers: { 'Authorization': 'Bearer ' + token }
+    });
+    const userInfo = JSON.parse(userInfoResponse.getContentText());
+    const userEmail = userInfo.email;
+
+    Logger.log('Sharing folder with user: ' + userEmail);
+    uploadFolder.addEditor(userEmail);
+
     Logger.log('Ready to receive ' + totalFiles + ' files');
 
     return {
@@ -264,7 +302,7 @@ function createFolder(folderName, parentFolderId) {
 /**
  * Creates a resumable upload session for a file
  * Called by client-side code before uploading file chunks
- * Uses OAuth2 library token (same as client) for CORS compatibility
+ * Uses OAuth2 library token (user's token) - user has folder access via sharing in prepareUpload()
  * @param {string} fileName - Name of the file
  * @param {string} mimeType - MIME type of the file
  * @param {string} parentFolderId - ID of parent folder
@@ -272,11 +310,10 @@ function createFolder(folderName, parentFolderId) {
  */
 function createUploadSession(fileName, mimeType, parentFolderId) {
   try {
-    // Use OAuth2 library token (same token client will use for chunks)
+    // Use OAuth2 library token (user's token) - user has editor access to folder
+    // Folder was shared with user in prepareUpload(), so their token can access it
+    // This token works for client-side fetch requests (no CORS issues)
     const service = getOAuthService();
-    if (!service.hasAccess()) {
-      return { success: false, message: 'User not authorized' };
-    }
     const accessToken = service.getAccessToken();
 
     const metadata = {
@@ -308,6 +345,51 @@ function createUploadSession(fileName, mimeType, parentFolderId) {
     }
   } catch (error) {
     Logger.log('ERROR in createUploadSession: ' + error.toString());
+    return { success: false, message: error.message };
+  }
+}
+
+/**
+ * Uploads a chunk to a resumable upload session
+ * Called by client-side code to proxy uploads through server (avoids CORS)
+ * @param {string} sessionUrl - The resumable session URL
+ * @param {string} chunkBase64 - Chunk data as base64 string
+ * @param {number} start - Start byte position
+ * @param {number} end - End byte position (exclusive)
+ * @param {number} totalSize - Total file size
+ * @returns {Object} {success, status, message}
+ */
+function uploadChunk(sessionUrl, chunkBase64, start, end, totalSize) {
+  try {
+    const chunkData = Utilities.base64Decode(chunkBase64);
+    const contentRange = 'bytes ' + start + '-' + (end - 1) + '/' + totalSize;
+
+    Logger.log('uploadChunk: ' + contentRange + ' (' + chunkData.length + ' bytes)');
+
+    const response = UrlFetchApp.fetch(sessionUrl, {
+      method: 'PUT',
+      headers: {
+        'Content-Range': contentRange
+      },
+      payload: chunkData,
+      muteHttpExceptions: true
+    });
+
+    const status = response.getResponseCode();
+    Logger.log('uploadChunk response: ' + status);
+
+    if (status === 200 || status === 201) {
+      // Upload complete
+      return { success: true, status: status, complete: true };
+    } else if (status === 308) {
+      // Chunk received, more expected
+      return { success: true, status: status, complete: false };
+    } else {
+      Logger.log('uploadChunk error: ' + response.getContentText());
+      return { success: false, status: status, message: response.getContentText() };
+    }
+  } catch (error) {
+    Logger.log('ERROR in uploadChunk: ' + error.toString());
     return { success: false, message: error.message };
   }
 }
